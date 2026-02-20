@@ -1,0 +1,101 @@
+name: Build D.ELITE APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # ✅ FIX: Create package.json FIRST, then install
+      - name: Create package.json
+        run: |
+          cat > package.json << 'EOF'
+          {
+            "name": "diptej-elite",
+            "version": "1.0.0",
+            "dependencies": {
+              "@capacitor/android": "^6.0.0",
+              "@capacitor/cli": "^6.0.0",
+              "@capacitor/core": "^6.0.0"
+            }
+          }
+          EOF
+
+      - name: Install dependencies
+        run: npm install
+
+      # ✅ FIX: Create capacitor.config.json with correct webDir
+      - name: Create capacitor config
+        run: |
+          cat > capacitor.config.json << 'EOF'
+          {
+            "appId": "com.diptej.elite",
+            "appName": "D.ELITE",
+            "webDir": "www",
+            "server": {
+              "androidScheme": "https"
+            }
+          }
+          EOF
+
+      # ✅ FIX: Create www/ folder and copy index.html into it
+      - name: Prepare web assets
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+      - name: Add Android platform
+        run: npx cap add android
+
+      - name: Sync assets to Android
+        run: npx cap sync android
+
+      # ✅ Fix: Enable DOM storage (localStorage) for the app
+      - name: Enable localStorage in WebView
+        run: |
+          cat > android/app/src/main/java/com/diptej/elite/MainActivity.java << 'EOF'
+          package com.diptej.elite;
+          import com.getcapacitor.BridgeActivity;
+          import android.os.Bundle;
+          import android.webkit.WebSettings;
+          public class MainActivity extends BridgeActivity {
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+              super.onCreate(savedInstanceState);
+              WebSettings s = getBridge().getWebView().getSettings();
+              s.setDomStorageEnabled(true);
+              s.setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
+            }
+          }
+          EOF
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Debug APK
+        run: cd android && ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: D-ELITE-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
